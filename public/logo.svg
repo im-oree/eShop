@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400" role="img" aria-label="eShop logo">
+  <defs>
+    <linearGradient id="eshop-mark-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22C55E"/>
+      <stop offset="0.55" stop-color="#16A34A"/>
+      <stop offset="1" stop-color="#0F172A"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Mark: rounded square -->
+  <rect x="24" y="24" width="352" height="352" rx="80" fill="url(#eshop-mark-grad)"/>
+
+  <!-- Shopping bag body -->
+  <path d="M128 176 L232 176 C232 176 232 168 232 168 C232 134 204 106 168 106 C132 106 104 134 104 168 C104 168 104 176 104 176 L128 176 Z"
+        fill="none" stroke="#ffffff" stroke-width="18" stroke-linejoin="round" stroke-linecap="round"/>
+  <rect x="112" y="176" width="112" height="128" rx="26" fill="#ffffff"/>
+
+  <!-- Bag handle -->
+  <path d="M144 176 L144 150 C144 124 168 108 192 108 C216 108 240 124 240 150 L240 176"
+        fill="none" stroke="#ffffff" stroke-width="20" stroke-linecap="round"/>
+
+  <!-- Green accent dot on the bag -->
+  <circle cx="168" cy="236" r="22" fill="#16A34A"/>
+
+  <!-- Wordmark -->
+  <text x="404" y="258" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="170" font-weight="800" letter-spacing="-3" fill="#0F172A">e<tspan fill="#16A34A">Shop</tspan></text>
+  <text x="408" y="330" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="42" font-weight="600" letter-spacing="9" fill="#64748B">MARKETPLACE</text>
+</svg>

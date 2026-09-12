@@ -1,294 +1,129 @@
-# E-Commerce Platform - Architecture & Development Guide
+# eShop — Architecture & Development Guide
 
-## System Architecture
+> Complementary design notes to the [README](README.md). The README's "Architecture" and "How it works" sections are the best starting point.
 
-```
-┌─────────────────────────────────────────────────────┐
-│                   Frontend (Vercel)                 │
-│         React + TypeScript + Tailwind CSS           │
-│              Vite Build Tool                        │
-└──────────────────┬──────────────────────────────────┘
-                   │ HTTPS
-                   │
-┌──────────────────▼──────────────────────────────────┐
-│              API Gateway (Express)                  │
-│           Backend (Railway/Render)                  │
-│     TypeScript + REST API                          │
-└──────────────┬──────────────────┬───────────────────┘
-               │                  │
-         [Firebase]          [Paystack]
-        Firestore            Payment
-        Auth                 Gateway
-  ┌──────────────┴──────────┐
-  │    Services Layer       │
-  │ - Products              │
-  │ - Orders                │
-  │ - Payments              │
-  │ - Users                 │
-  └────────────────────────┘
-```
-
-## Data Flow
-
-### Product Browsing
-1. Frontend requests products from `/api/products`
-2. Backend queries Firestore
-3. Returns paginated results
-
-### Checkout Flow
-1. User adds items to cart (Zustand store)
-2. Navigates to checkout
-3. Selects address
-4. Clicks "Pay Now"
-5. Backend creates order in Firestore
-6. Calls Paystack API to generate payment link
-7. User redirected to Paystack page
-8. After payment, webhook confirms transaction
-9. Order status updated in Firestore
-
-## Code Organization
-
-### Frontend Structure
+## System overview
 
 ```
-frontend/
-├── src/
-│   ├── components/       # Reusable UI components
-│   │   ├── Header.tsx
-│   │   ├── Footer.tsx
-│   │   ├── Layout.tsx
-│   ├── pages/           # Page components
-│   │   ├── HomePage.tsx
-│   │   ├── LoginPage.tsx
-│   ├── services/        # API communication
-│   │   ├── api.ts       # Axios instance
-│   │   ├── productService.ts
-│   │   ├── authService.ts
-│   ├── store/           # Zustand stores
-│   │   ├── authStore.ts
-│   │   ├── cartStore.ts
-│   ├── hooks/           # Custom React hooks
-│   ├── utils/           # Utility functions
-│   └── styles/          # CSS/Tailwind
-├── index.html
-├── vite.config.ts
-├── tailwind.config.ts
-└── tsconfig.json
+Frontend (Vite SPA @ :5173)  ──REST/JSON──▶  Backend (Express @ :5000)  ──▶  Firestore / Auth
+        │                                            │
+        └── Zustand + React Router ──┐                ├── PaystackProvider
+                                     │                ├── StripeProvider (stub)
+        Typed services (src/services)│                ├── FlutterwaveProvider (stub)
+                                     │                ├── EmailService (Brevo)
+                                     │                └── NotificationService (FCM)
 ```
 
-### Backend Structure
+- The frontend never talks to Firebase for data — it talks to the Express API, which is the only place with Firebase Admin credentials.
+- The frontend Web SDK (`src/services/firebaseClient.ts`) exists solely for FCM browser push.
+
+## Frontend architecture
 
 ```
-backend/
-├── src/
-│   ├── config/          # Configuration
-│   │   ├── index.ts     # Environment loading
-│   │   ├── firebase.ts  # Firebase setup
-│   ├── services/        # Business logic
-│   │   ├── ProductService.ts
-│   │   ├── UserService.ts
-│   │   ├── OrderService.ts
-│   │   ├── PaymentService.ts
-│   ├── providers/       # Payment providers
-│   │   ├── PaystackProvider.ts
-│   │   ├── OtherProviders.ts
-│   ├── routes/          # API routes
-│   │   ├── auth.ts
-│   │   ├── products.ts
-│   │   ├── orders.ts
-│   │   ├── payments.ts
-│   ├── middlewares/     # Express middleware
-│   │   └── index.ts     # Auth, error handling
-│   ├── types/           # TypeScript types
-│   ├── utils/           # Utilities
-│   ├── app.ts           # Express app setup
-│   └── server.ts        # Server entry point
-└── tsconfig.json
+src/
+├── App.tsx           # route table
+├── components/       # presentational + layout components
+├── pages/            # one file per route
+├── services/         # typed wrappers around apiClient
+├── store/            # Zustand: authStore, cartStore
+├── hooks/            # useAsync, useFetch
+├── utils/            # formatPrice, dates, orderStage, rbac
+└── types/            # models (mirrors backend types)
 ```
 
-## Key Features Implementation
+### State ownership
 
-### 1. Environment Detection
+- **Auth** → `authStore`. Holds `user`, `token`, `currentRole`. The `currentRole` concept lets a seller toggle between Buyer and Seller views.
+- **Cart** → `cartStore`. Local-first; each mutation `POST /api/cart` so the cart survives reloads for logged-in users.
+- **Server data** → fetched per page via `services/*` (no global cache; light polling on some pages, e.g. Home re-fetches every 15s).
 
-The app automatically detects environment based on:
-- `NODE_ENV` variable
-- Railway/Render platform metadata
-- Manual `APP_ENV` override
+### Session restore
 
-See `backend/src/config/index.ts`
+On mount, `Layout` reads `localStorage.authToken` and, if present, calls `GET /api/auth/me`. Any `401` clears the token and redirects to `/login` (handled centrally by the Axios interceptor in `services/api.ts`).
 
-### 2. Payment Abstraction
+## Backend architecture
 
-All payment providers implement `IPaymentProvider`:
-
-```typescript
-interface IPaymentProvider {
-  initializePayment(data: PaymentInitiation): Promise<PaymentResponse>
-  verifyPayment(data: PaymentVerification): Promise<PaymentResponse>
-  refundPayment(reference: string, amount: number): Promise<PaymentResponse>
-}
+```
+backend/src/
+├── config/        # loadConfig() + environment detection + Firebase init
+├── middlewares/   # authenticate, optionalAuth, requireAdmin, rateLimit, errorHandler
+├── routes/        # thin HTTP handlers → delegate to services
+├── services/      # business logic + Firestore access
+├── providers/     # payment provider abstraction
+├── utils/         # JWT/bcrypt, helpers, response envelope, rbac
+├── types/         # domain models
+├── app.ts         # middleware + route wiring
+└── server.ts      # entry point
 ```
 
-Adding a new provider:
-1. Create class implementing `IPaymentProvider`
-2. Register in `PaymentService`
-3. Enable with feature flag in `.env`
+### Layering rules
 
-### 3. Firebase Integration
+1. **Routes** parse/validate input and call a service; they don't touch Firestore directly (except the messaging routes, which manage the `conversations`/`messages` collections inline).
+2. **Services** own one collection each and return typed domain objects.
+3. **Providers** are swapped through `PaymentServiceFactory` — add a provider by implementing `IPaymentProvider` and registering it.
 
-- Firestore for data storage
-- Auth for user management
-- Never expose Firebase SDK on frontend
-- All Firebase calls through backend APIs
+### Response envelope
 
-### 4. Authentication Flow
-
-1. User signs up with email/password
-2. Firebase creates user account
-3. Backend generates JWT token
-4. Token stored in localStorage
-5. Token sent with each API request
-6. Middleware validates token
-
-### 5. Price Handling
-
-All prices stored in **kobo** (100 kobo = 1 naira):
-- Product prices: stored as kobo
-- Cart amounts: calculated in kobo
-- Display: converted to naira using `formatPrice()`
-
-## Development Workflow
-
-### Creating a New Feature
-
-1. **Backend**
-   - Add types in `backend/src/types/index.ts`
-   - Create service in `backend/src/services/`
-   - Create route in `backend/src/routes/`
-
-2. **Frontend**
-   - Create service in `frontend/src/services/`
-   - Create component/page in `frontend/src/pages/`
-   - Add store if state management needed
-
-3. **Testing**
-   - Test API manually with curl/Postman
-   - Test UI in browser
-
-### Adding a Route
-
-Backend:
-```typescript
-router.get('/endpoint', middleware, async (req, res) => {
-  try {
-    // Implementation
-    sendSuccess(res, data)
-  } catch (error) {
-    sendError(res, error.message)
-  }
-})
+```ts
+sendSuccess(res, data, message, 200)   // → { success, message, data }
+sendError(res, error, 400, message)     // → { success, message, error }
+sendPaginated(res, items, total, page, limit) // → { success, message, data: { items, total, page, limit, pages } }
 ```
 
-Frontend:
-```typescript
-const { data, loading, error } = useFetch('/api/endpoint')
-```
+## Key flows
 
-## Common Patterns
+### Authentication
 
-### Error Handling
+1. `POST /api/auth/signup` → `UserService.create` → Firebase Auth `createUser` → Firestore `users/{uid}` → JWT issued.
+2. Subsequent requests carry `Authorization: Bearer <token>`; `authenticate` verifies it with `config.jwt.secret`.
+3. `GET /api/auth/me` re-hydrates the frontend session from the token.
 
-Backend: Use consistent `sendError` format
-Frontend: Try-catch with Zustand state update
+### Checkout & payment
 
-### Pagination
+See the README ["Checkout & payment flow"](README.md#checkout--payment-flow). Key details:
 
-Backend:
-```typescript
-const page = parseInt(req.query.page) || 1
-const limit = parseInt(req.query.limit) || 20
-// Query, count, offset, limit
-sendPaginated(res, items, total, page, limit)
-```
+- On verification, the order's `paymentStatus` becomes `completed` and its `status` becomes `noted` (the first fulfilment stage).
+- A `sellerOrders` document is written **per seller** so each vendor only sees their slice of a multi-seller order.
+- Buyer and seller emails + in-app/FCM notifications are fired asynchronously so verification stays fast.
 
-### Authentication Check
+### Multi-seller order visibility
 
-Frontend:
-```typescript
-useEffect(() => {
-  if (!isAuthenticated) {
-    navigate('/login')
-  }
-}, [isAuthenticated])
-```
+`GET /api/orders/seller` fetches the seller's products, then filters all orders server-side for items that match — with a fallback to the `sellerOrders` linking collection.
 
-## Testing
+### RBAC for employees
 
-### API Testing
+`utils/rbac.ts` (both sides) maps a `role` + `employeePermissions` to an effective permission set. `hasAccess(level, 'read'|'write')` is checked in product, order, and message routes for `employee` accounts.
+
+## Adding a feature (recipe)
+
+**Backend**
+1. Add types to `backend/src/types/index.ts`.
+2. Create/extend a service in `backend/src/services/`.
+3. Create/extend a route in `backend/src/routes/` and mount it in `backend/src/app.ts`.
+
+**Frontend**
+1. Add a wrapper in `src/services/`.
+2. Add a page in `src/pages/` and register it in `src/App.tsx`.
+3. Add store state only if it's shared across pages.
+
+## Useful commands
 
 ```bash
-# Test health
-curl http://localhost:5000/health
+# Frontend
+npm run dev         # dev server (5173)
+npm run build       # tsc + vite build
+npm run type-check  # tsc --noEmit
 
-# Test products
-curl http://localhost:5000/api/products
-
-# Test with auth
-curl -H "Authorization: Bearer token" http://localhost:5000/api/auth/me
-```
-
-### Frontend Testing
-
-Use React DevTools to:
-- Inspect component state
-- Check Zustand stores
-- Monitor network requests
-
-## Performance Tips
-
-1. Use `React.memo` for expensive components
-2. Lazy load routes with `React.lazy`
-3. Optimize images with CDN
-4. Use Firestore indexes for common queries
-5. Implement pagination for large datasets
-6. Cache API responses where appropriate
-
-## Security Best Practices
-
-1. Never log sensitive data
-2. Always validate input
-3. Use HTTPS everywhere
-4. Rotate secrets regularly
-5. Monitor failed login attempts
-6. Implement rate limiting
-7. Keep dependencies updated
-
-## Useful Commands
-
-```bash
 # Backend
 cd backend
-npm run dev      # Start dev server
-npm run build    # Build for production
-npm run type-check # Check TypeScript
-
-# Frontend
-cd frontend
-npm run dev      # Start dev server
-npm run build    # Build for production
-npm run preview  # Preview production build
-npm run type-check # Check TypeScript
+npm run dev         # tsx watch (5000)
+npm run build       # tsc
+npm run type-check
+npm run seed:products
 ```
 
-## Deployment Checklist
+## Performance tips
 
-- [ ] All environment variables set
-- [ ] Firebase credentials configured
-- [ ] Paystack API keys added
-- [ ] Frontend API URL updated
-- [ ] CORS origin configured
-- [ ] Database indexes created
-- [ ] Webhooks configured
-- [ ] SSL certificate installed
-- [ ] Monitoring setup
-- [ ] Backup strategy verified
+- Keep list queries paginated (`page`/`limit`); the admin/seller analytics endpoints fetch broad sets and aggregate in memory — a good place to add Firestore indexes/aggregations at scale.
+- Use `React.memo`/`React.lazy` for heavy pages; Home already re-fetches on a light interval rather than streaming.
+- Add composite indexes for combined `where` queries (category + featured, etc.).
