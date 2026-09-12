@@ -13,6 +13,9 @@ export default defineConfig({
   server: {
     port: 5173,
     open: true,
+    // Allow the dev server to be reached through reverse-proxy preview hosts
+    // (e.g. Arena/E2B live previews). Disables Vite's hostname allowlist check.
+    allowedHosts: true,
     proxy: {
       '/api': {
         target: 'http://localhost:5000',

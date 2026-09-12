@@ -111,7 +111,12 @@ export default function Header(): JSX.Element {
     >
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16 sm:h-[72px]">
-          <Link to={getLogoLink()} className="text-xl sm:text-2xl font-bold text-primary">
+          <Link to={getLogoLink()} className="flex items-center gap-2 text-xl sm:text-2xl font-bold text-primary">
+            <img
+              src="/favicon.svg"
+              alt="eShop logo"
+              className="h-7 w-7 sm:h-8 sm:w-8 rounded-lg shrink-0"
+            />
             eShop
           </Link>
 

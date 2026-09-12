@@ -840,7 +840,7 @@ function SellerShopPage() {
                     </div>
                   ))}
                 </div>
-              ) : filteredProducts.length === 0 ? (
+              )) : filteredProducts.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 sm:py-20
                               rounded-2xl border border-dashed border-border bg-white
                               text-center px-4 animate-fade-in">
@@ -918,7 +918,7 @@ function SellerShopPage() {
                   Showing {dashboardVisibleProducts.length} of {stats.total} products
                 </p>
               </>
-          )}
+          ))}
       </div>
     </div>
   </div>

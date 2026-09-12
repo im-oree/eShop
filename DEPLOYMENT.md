@@ -1,201 +1,106 @@
-# E-Commerce Platform - Deployment Guide
+# eShop — Deployment Guide
+
+> Deploying the eShop marketplace. Local development details live in the [README](README.md).
 
 ## Prerequisites
 
-- Node.js 16+ and npm/yarn
-- Firebase project (Firestore + Auth)
-- Paystack account
-- Vercel account (for frontend)
-- Railway or Render account (for backend)
+- Node.js 16+ (18/20/22 recommended)
+- A Firebase project with **Firestore** and **Email/Password Auth** enabled + a **service-account private key**
+- A [Paystack](https://paystack.com) account (test mode is fine to start)
+- (Optional) A [Brevo](https://www.brevo.com) account for transactional email
 
-## Environment Setup
+## 1. Firebase setup
 
-### 1. Firebase Setup
+1. Create a project in the [Firebase Console](https://console.firebase.google.com).
+2. Enable **Firestore** and **Authentication → Email/Password**.
+3. Project Settings → Service Accounts → **Generate new private key** — this gives you `project_id`, `private_key`, and `client_email`.
 
-1. Create a project on [Firebase Console](https://console.firebase.google.com)
-2. Enable Firestore Database
-3. Enable Authentication (Email/Password)
-4. Create a service account:
-   - Go to Project Settings → Service Accounts
-   - Click "Generate New Private Key"
-   - Copy the JSON credentials
+## 2. Paystack setup
 
-### 2. Paystack Setup
+1. Sign up at [Paystack](https://paystack.com) and switch to **test mode** for development.
+2. Settings → API Keys & Webhooks → copy the test **Secret Key** and **Public Key**.
 
-1. Sign up on [Paystack](https://paystack.com)
-2. Get your API keys from Settings → Developers
-3. Copy Secret Key and Public Key
+## 3. Backend deployment (Railway / Render)
 
-### 3. Backend Deployment (Railway)
+The backend is the **`backend/` directory** (not the repo root).
 
-1. Create a Railway account
-2. Create a new project
-3. Connect your GitHub repository
-4. Add environment variables from `.env.example`:
+1. Push the repo to GitHub.
+2. Create a service in Railway/Render with **root directory `backend`**.
+3. Set the environment variables (see [README env vars](README.md#environment-variables)):
 
 ```env
 NODE_ENV=production
 APP_ENV=auto
 PORT=5000
 FIREBASE_PROJECT_ID=your-project-id
-FIREBASE_PRIVATE_KEY=your-private-key
+FIREBASE_PRIVATE_KEY=your-private-key       # \n must be escaped if pasted raw
 FIREBASE_CLIENT_EMAIL=your-client-email
-JWT_SECRET=your-secret-key
-PAYSTACK_SECRET_KEY=your-secret-key
-PAYSTACK_PUBLIC_KEY=your-public-key
+JWT_SECRET=your-long-random-secret
+PAYSTACK_ENV=live
+PAYSTACK_LIVE_SECRET_KEY=sk_live_xxx
+PAYSTACK_LIVE_PUBLIC_KEY=pk_live_xxx
+BREVO_API_KEY=your-brevo-api-key
+SENDER_EMAIL=noreply@your-domain.com
+SENDER_NAME=eShop
 CORS_ORIGIN=https://your-frontend-domain.com
 ```
 
-5. Deploy the backend directory
+4. Build command: `npm run build` · Start command: `npm start`.
 
-### 4. Frontend Deployment (Vercel)
+> **FIREBASE_PRIVATE_KEY note:** the value contains literal `\n` sequences. Paste it as a single line with `\n` intact (the app unescapes it in `config/index.ts`).
 
-1. Push frontend code to GitHub
-2. Go to [Vercel](https://vercel.com)
-3. Import the repository
-4. Set root directory to `frontend`
-5. Add environment variables:
+## 4. Frontend deployment (Vercel / Netlify)
+
+The frontend is the **repository root**.
+
+1. Import the repo; set the **root directory to the repo root** and the build command to `npm run build`.
+2. Output directory: `dist`.
+3. Set environment variables:
 
 ```env
 VITE_API_BASE_URL=https://your-backend-domain.com/api
 VITE_APP_ENV=production
+VITE_FIREBASE_API_KEY=...       # only if you want FCM browser push
+VITE_FIREBASE_AUTH_DOMAIN=...
+VITE_FIREBASE_PROJECT_ID=...
+VITE_FIREBASE_MESSAGING_SENDER_ID=...
+VITE_FIREBASE_APP_ID=...
 ```
 
-6. Deploy
+## 5. Paystack webhook
 
-## Local Development
+1. Paystack Dashboard → Settings → Webhooks.
+2. Add URL: `https://your-backend-domain.com/api/payments/webhook`.
+3. Subscribe to the **`charge.success`** event.
+4. Ensure the backend is publicly reachable (HTTPS).
 
-### Backend
+> The webhook signature verification is still a TODO in the codebase — treat this endpoint as trusted-network-only until that is implemented.
+
+## Local development (recap)
 
 ```bash
-cd backend
-cp .env.example .env
-# Update .env with your credentials
-npm install
-npm run dev
+# Backend — http://localhost:5000
+cd backend && cp .env.example .env && npm install && npm run dev
+
+# Frontend — http://localhost:5173 (proxies /api → :5000)
+cp .env.example .env && npm install && npm run dev
 ```
 
-Server runs on `http://localhost:5000`
+## Security checklist
 
-### Frontend
-
-```bash
-cd frontend
-cp .env.example .env.local
-# Update .env.local with your API URL
-npm install
-npm run dev
-```
-
-App runs on `http://localhost:3000`
-
-## Payment Webhook Setup (Paystack)
-
-1. Go to Paystack Dashboard → Settings → Webhooks
-2. Add webhook URL: `https://your-backend-domain.com/api/payments/webhook`
-3. Select events: `charge.success`
-
-## Database Schema
-
-### Collections in Firestore
-
-```
-/users
-  /userId
-    - email: string
-    - name: string
-    - phone: string
-    - addresses: Address[]
-    - createdAt: timestamp
-    - updatedAt: timestamp
-
-/products
-  /productId
-    - name: string
-    - description: string
-    - price: number (kobo)
-    - images: string[]
-    - category: string
-    - stock: number
-    - featured: boolean
-    - createdAt: timestamp
-
-/orders
-  /orderId
-    - userId: string
-    - items: OrderItem[]
-    - totalAmount: number (kobo)
-    - status: string
-    - paymentStatus: string
-    - shippingAddress: Address
-    - paymentRef: string
-    - createdAt: timestamp
-
-/categories
-  /categoryId
-    - name: string
-    - slug: string
-```
-
-## Scaling Considerations
-
-### Frontend
-- Image optimization with CDN
-- Code splitting with React.lazy
-- Service worker for offline support
-- Database indexes for Firestore queries
-
-### Backend
-- Connection pooling for Firestore
-- Rate limiting per user/IP
-- Caching layer (Redis)
-- Async job queue for emails/notifications
-
-### Database
-- Composite indexes for common queries
-- Archive old orders to separate collection
-- Backup strategy
-
-## Monitoring & Logging
-
-- Use Railway/Render logs for backend monitoring
-- Vercel analytics for frontend performance
-- Firebase billing alerts
-- Consider sending logs to external service (e.g., LogRocket, Sentry)
-
-## Security Checklist
-
-- [ ] Firebase Rules restrict unauthorized access
-- [ ] JWT tokens have expiration
-- [ ] Passwords hashed with bcrypt
-- [ ] CORS properly configured
-- [ ] Environment variables not committed
-- [ ] Payment webhook signature verified
-- [ ] Rate limiting enabled
-- [ ] Input validation on all endpoints
-- [ ] HTTPS enforced everywhere
+- [ ] Firebase security rules restrict client access (all reads/writes go through the backend).
+- [ ] `JWT_SECRET` is long, random, and not committed.
+- [ ] `CORS_ORIGIN` is scoped to your real frontend domain.
+- [ ] Paystack keys use the correct `PAYSTACK_ENV` (test vs live).
+- [ ] Rate limiting is enabled (default 100 req / 15 min / IP).
+- [ ] `BREVO_API_KEY` is not committed to the repo.
+- [ ] HTTPS enforced on the frontend and backend.
 
 ## Troubleshooting
 
-### Backend won't start
-- Check environment variables
-- Verify Firebase credentials
-- Check port availability
-
-### Payment integration failing
-- Verify Paystack credentials
-- Check webhook URL is accessible
-- Enable CORS for payment domain
-
-### Frontend can't reach backend
-- Check CORS_ORIGIN in backend
-- Verify API URL in frontend .env
-- Check network connectivity
-
-## Support
-
-For issues, check:
-1. Firebase documentation
-2. Paystack API docs
-3. Express/Fastify guides
-4. React/Vite documentation
+| Symptom | Fix |
+| --- | --- |
+| Backend won't start | Check missing env vars (it lists them on failure); verify `FIREBASE_PRIVATE_KEY` newline escaping. |
+| CORS errors in browser | Set `CORS_ORIGIN` to the exact frontend origin (or `*` for testing). |
+| Frontend can't reach API | Set `VITE_API_BASE_URL`; locally, confirm the Vite proxy target `http://localhost:5000`. |
+| Payments fail | Confirm `PAYSTACK_ENV` matches the keys used; check the webhook URL is reachable. |
